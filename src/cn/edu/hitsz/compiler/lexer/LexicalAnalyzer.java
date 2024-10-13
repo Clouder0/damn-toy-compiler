@@ -95,6 +95,7 @@ public class LexicalAnalyzer {
                             symbolTable.add(v);
                         }
                     }
+                    i = p;
 
                 }
                 case DIGIT -> {
@@ -103,6 +104,7 @@ public class LexicalAnalyzer {
                         ++p;
                     }
                     tokens.add(Token.normal("IntConst", this.s.substring(i, p + 1)));
+                    i = p;
 
                 }
                 case ERROR -> {

@@ -1,12 +1,11 @@
 package cn.edu.hitsz.compiler.parser;
 
-import cn.edu.hitsz.compiler.NotImplementedException;
 import cn.edu.hitsz.compiler.lexer.Token;
+import cn.edu.hitsz.compiler.parser.table.Action;
 import cn.edu.hitsz.compiler.parser.table.LRTable;
 import cn.edu.hitsz.compiler.parser.table.Production;
 import cn.edu.hitsz.compiler.parser.table.Status;
 import cn.edu.hitsz.compiler.symtab.SymbolTable;
-
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Stack;
@@ -25,10 +24,10 @@ public class SyntaxAnalyzer {
     private final SymbolTable symbolTable;
     private final List<ActionObserver> observers = new ArrayList<>();
 
-    private List<Token> tokens = new ArrayList<>();
+    private final List<Token> tokens = new ArrayList<>();
     private LRTable lrTable;
-    private Stack<Symbol> symbolStack = new Stack<>();
-    private Stack<Status> statusStack = new Stack<>();
+    private final Stack<Symbol> symbolStack = new Stack<>();
+    private final Stack<Status> statusStack = new Stack<>();
 
 
     public SyntaxAnalyzer(SymbolTable symbolTable) {
@@ -102,14 +101,13 @@ public class SyntaxAnalyzer {
         // 你需要根据上面的输入来实现 LR 语法分析的驱动程序
         // 请分别在遇到 Shift, Reduce, Accept 的时候调用上面的 callWhenInShift, callWhenInReduce, callWhenInAccept
         // 否则用于为实验二打分的产生式输出可能不会正常工作
-        throw new NotImplementedException();
         
         // init stacks
         this.statusStack.push(this.lrTable.getInit());
         this.symbolStack.push(new Symbol(Token.eof()));
         
         int p = 0;
-        boolean looping = true
+        boolean looping = true;
         while(looping) {
             var token = this.tokens.get(p);
             var status = this.statusStack.peek();
@@ -120,7 +118,7 @@ public class SyntaxAnalyzer {
                     callWhenInShift(status, token);
                     this.statusStack.push(action.getStatus());
                     this.symbolStack.push(new Symbol(token));
-                    ++i;
+                    ++p;
                     break;
                 }
                 case Reduce -> {
@@ -134,7 +132,7 @@ public class SyntaxAnalyzer {
                     this.symbolStack.push(new Symbol(prod.head()));
                 }
                 case Error -> {
-                    action.error();
+                    Action.error();
                     System.out.println("Syntax error!");
                     looping = false;
                 }
