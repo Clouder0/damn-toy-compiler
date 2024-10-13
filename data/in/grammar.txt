@@ -1,0 +1,30 @@
+P -> S_list;
+S_list -> S Semicolon S_list;
+S_list -> S Semicolon;
+S -> D id;
+D -> int;
+S -> id = E;
+S -> return E;
+E -> E + A;
+E -> E - A;
+E -> A;
+A -> A * B;
+A -> B;
+B -> ( E );
+B -> id;
+B -> IntConst;
+
+P -> SL
+SL -> SL SSL
+SL -> SSL
+SSL -> SEMI SL
+SEMI -> ;
+
+S -> D IDSEMI
+IDSEMI -> ID SEMI
+ID -> id
+D -> int
+
+S -> IDE ESEMI
+ESEMI -> E SEMI
+IDE -> id =
