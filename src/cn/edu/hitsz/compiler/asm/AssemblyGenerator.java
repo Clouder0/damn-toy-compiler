@@ -1,9 +1,12 @@
 package cn.edu.hitsz.compiler.asm;
 
 import cn.edu.hitsz.compiler.NotImplementedException;
-import cn.edu.hitsz.compiler.ir.Instruction;
+import cn.edu.hitsz.compiler.ir.*;
+import cn.edu.hitsz.compiler.utils.FileUtils;
 
-import java.util.List;
+import java.io.File;
+import java.util.*;
+import java.util.stream.Collectors;
 
 
 /**
@@ -21,6 +24,14 @@ import java.util.List;
  * @see AssemblyGenerator#run() 代码生成与寄存器分配
  */
 public class AssemblyGenerator {
+    enum REG {
+        t0, t1, t2, t3, t4, t5, t6
+    }
+    private final List<Instruction> insts = new ArrayList<>();
+    Map<IRValue, REG> v2r = new HashMap<>();
+    Map<REG, IRValue> r2v = new HashMap<>();
+    private final List<String> asm = new ArrayList<>(List.of(".text"));
+    
 
     /**
      * 加载前端提供的中间代码
@@ -31,8 +42,88 @@ public class AssemblyGenerator {
      * @param originInstructions 前端提供的中间代码
      */
     public void loadIR(List<Instruction> originInstructions) {
-        // TODO: 读入前端提供的中间代码并生成所需要的信息
-        throw new NotImplementedException();
+        for(var inst : originInstructions) {
+            InstructionKind inst_kind = inst.getKind();
+            if(inst_kind.isReturn()) {
+                insts.add(inst);
+                break;
+            }
+            if(inst_kind.isUnary()) {
+                insts.add(inst);
+                continue;
+            } 
+            if(inst_kind.isBinary()) {
+                var lhs = inst.getLHS();
+                var rhs = inst.getRHS();
+                var result = inst.getResult();
+                if(lhs.isImmediate() && rhs.isImmediate()) {
+                    // comp-time calculate
+                    int imm_res = 0;
+                    var imm_lhs = ((IRImmediate)lhs).getValue();
+                    var imm_rhs = ((IRImmediate)rhs).getValue();
+                    switch(inst_kind) {
+                        case ADD -> imm_res = imm_lhs + imm_rhs;
+                        case SUB -> imm_res = imm_lhs - imm_rhs;
+                        case MUL -> imm_res = imm_lhs * imm_rhs;
+                        default -> System.out.println("error");
+                    }
+                    insts.add(Instruction.createMov(result, IRImmediate.of(imm_res)));
+                } else if(lhs.isImmediate() && rhs.isIRVariable()) {
+                    switch(inst_kind) {
+                        case ADD -> insts.add(Instruction.createAdd(result, rhs, lhs));
+                        case SUB -> {
+                            IRVariable temp = IRVariable.temp();
+                            insts.add(Instruction.createMov(temp, lhs));
+                            insts.add(Instruction.createSub(result, temp, rhs));
+                        }
+                        case MUL -> {
+                            IRVariable temp = IRVariable.temp();
+                            insts.add(Instruction.createMov(temp, lhs));
+                            insts.add(Instruction.createMul(result, temp, rhs));
+                        }
+                        default -> System.out.println("error");
+                    }
+                } else if(lhs.isIRVariable() && rhs.isImmediate()) {
+                    switch(inst_kind) {
+                        case ADD, SUB -> insts.add(inst);
+                        case MUL -> {
+                            IRVariable temp = IRVariable.temp();
+                            insts.add(Instruction.createMov(temp, rhs));
+                            insts.add(Instruction.createMul(result, lhs, temp));
+                        }
+                    }
+                } else {
+                    insts.add(inst);
+                }
+
+            }
+        }
+    }
+    
+    public void allocate(IRValue oprands, int idx) {
+        if(oprands.isImmediate()) return;
+        if(v2r.containsKey(oprands)) return;
+        for(var reg : REG.values()) {
+            if(!r2v.containsKey(reg)) {
+                r2v.put(reg, oprands);
+                v2r.put(oprands, reg);
+                return;
+            }
+        }
+        Set<REG> unused = Arrays.stream(REG.values()).collect(Collectors.toSet());
+        for(int i = idx; i < insts.size(); ++i) {
+            var inst = insts.get(i);
+            for(var irv : inst.getOprands()) {
+                unused.remove(v2r.get(irv));
+            }
+        }
+        if(!unused.isEmpty()) {
+            var touse = unused.iterator().next();
+            r2v.put(touse, oprands);
+            v2r.put(oprands, touse);
+            return;
+        }
+        throw new RuntimeException("No enough registers");
     }
 
 
@@ -46,8 +137,85 @@ public class AssemblyGenerator {
      * 成前完成建立, 与代码生成的过程相关的信息可自行设计数据结构进行记录并动态维护.
      */
     public void run() {
-        // TODO: 执行寄存器分配与代码生成
-        throw new NotImplementedException();
+        int i = 0;
+        String code = null;
+        for(var inst : insts) {
+            var inst_kind = inst.getKind();
+            switch(inst_kind) {
+                case ADD -> {
+                    var lhs = inst.getLHS();
+                    var rhs = inst.getRHS();
+                    var result = inst.getResult();
+                    this.allocate(lhs, i);
+                    this.allocate(rhs, i);
+                    this.allocate(result, i);
+                    var reg_lhs = v2r.get(lhs);
+                    var reg_rhs = v2r.get(rhs);
+                    var reg_result = v2r.get(result);
+                    if(rhs.isImmediate()) {
+                        code = String.format("\taddi %s, %s, %s", reg_result.toString(), reg_lhs.toString(), rhs.toString());
+                    } else {
+                        code = String.format("\tadd %s, %s, %s", reg_result.toString(), reg_lhs.toString(), reg_rhs.toString());
+                    }
+                }
+                case SUB -> {
+                    var lhs = inst.getLHS();
+                    var rhs = inst.getRHS();
+                    var result = inst.getResult();
+                    this.allocate(lhs, i);
+                    this.allocate(rhs, i);
+                    this.allocate(result, i);
+                    var reg_lhs = v2r.get(lhs);
+                    var reg_rhs = v2r.get(rhs);
+                    var reg_result = v2r.get(result);
+                    if(rhs.isImmediate()) {
+                        code = String.format("\tsubi %s, %s, %s", reg_result.toString(), reg_lhs.toString(), rhs.toString());
+                    } else {
+                        code = String.format("\tsub %s, %s, %s", reg_result.toString(), reg_lhs.toString(), reg_rhs.toString());
+                    }
+                }
+                case MUL -> {
+                    var lhs = inst.getLHS();
+                    var rhs = inst.getRHS();
+                    var result = inst.getResult();
+                    this.allocate(lhs, i);
+                    this.allocate(rhs, i);
+                    this.allocate(result, i);
+                    var reg_lhs = v2r.get(lhs);
+                    var reg_rhs = v2r.get(rhs);
+                    var reg_result = v2r.get(result);
+                    code = String.format("\tmul %s, %s, %s", reg_result.toString(), reg_lhs.toString(), reg_rhs.toString());
+                }
+                case MOV -> {
+                    var from = inst.getFrom();
+                    var to = inst.getResult();
+                    this.allocate(from, i);
+                    this.allocate(to, i);
+                    var reg_from = v2r.get(from);
+                    var reg_to = v2r.get(to);
+                    if(from.isImmediate()) {
+                        code = String.format("\tli %s, %s", reg_to.toString(), from.toString());
+                    } else {
+                        code = String.format("\tmov %s, %s", reg_to.toString(), reg_from.toString());
+                    }
+                }
+                case RET -> {
+                    var ret = inst.getReturnValue();
+                    var return_reg = v2r.get(ret);
+                    code = String.format("\tmv a0, %s", return_reg.toString());
+                }
+                default -> {
+                    System.out.println("wrong asm!!!");
+                    System.out.println(inst);
+                }
+            }
+            code += "\t# %s".formatted(inst.toString()); // append source
+            asm.add(code);
+            i++;
+            if(inst_kind == InstructionKind.RET) {
+                break;
+            }
+        }
     }
 
 
@@ -57,8 +225,7 @@ public class AssemblyGenerator {
      * @param path 输出文件路径
      */
     public void dump(String path) {
-        // TODO: 输出汇编代码到文件
-        throw new NotImplementedException();
+        FileUtils.writeLines(path, asm);
     }
 }
 
