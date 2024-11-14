@@ -196,7 +196,7 @@ public class AssemblyGenerator {
                     if(from.isImmediate()) {
                         code = String.format("\tli %s, %s", reg_to.toString(), from.toString());
                     } else {
-                        code = String.format("\tmov %s, %s", reg_to.toString(), reg_from.toString());
+                        code = String.format("\tmv %s, %s", reg_to.toString(), reg_from.toString());
                     }
                 }
                 case RET -> {
